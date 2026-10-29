@@ -21,8 +21,10 @@ pack_one() {                   # $1 = source .xz path, $2 = dir where parts go
   stem="$outdir/$name"
   split -b "$PART" --numeric-suffixes=1 -a "$a" "$src" "$stem.p"
   for p in "$stem".p*; do s=${p##*.p}; t=$((10#$s)); [ "$s" != "$t" ] && mv "$p" "$stem.p$t"; done   # p01 -> p1
-  # verify: reassemble parts in order, compare byte-exact to source, hash on the fly
-  if cat $(ls "$stem".p* | sort -V) | tee >(sha256sum | awk -v f="$name" '{print $1"  "f}' > "$stem.sha256") | cmp -s - "$src"; then
+  # verify: reassemble parts in order, compare byte-exact to source; then hash (2 passes, parts page-cached)
+  verify(){ cat $(ls "$stem".p* | sort -V) | cmp -s - "$src"; }
+  if verify || { echo "RETRY $name (cmp rc=$?)" >&2; sleep 5; verify; }; then
+    cat $(ls "$stem".p* | sort -V) | sha256sum | awk -v f="$name" '{print $1"  "f}' > "$stem.sha256"
     echo "OK   $name  $size B  $n parts"; OK=$((OK+1)); NPART=$((NPART+n))
   else
     echo "DIFF $name  $size B  $n parts" >&2; BAD=$((BAD+1))
